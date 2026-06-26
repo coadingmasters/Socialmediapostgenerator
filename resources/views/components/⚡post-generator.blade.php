@@ -27,7 +27,14 @@ new class extends Component
     /** @var array<int, string> */
     public array $hooks = [];
 
-    public array $topics = ['Laravel', 'PHP', 'Web Development', 'Freelancing Tips', 'ClickHouse'];
+    public array $topics = [
+        'Laravel', 'PHP', 'Web Development', 'Freelancing Tips', 'ClickHouse',
+        'MySQL', 'Livewire', 'Tailwind CSS', 'JavaScript', 'Vue.js', 'React',
+        'REST APIs', 'Laravel Queues', 'Eloquent ORM', 'Redis Caching', 'Docker',
+        'Git & GitHub', 'Database Optimization', 'Web Performance', 'Testing & PHPUnit',
+        'DevOps', 'Microservices', 'SaaS', 'AI Tools', 'Career Growth', 'Remote Work',
+        'Client Communication', 'Pricing & Rates', 'Productivity', 'Open Source',
+    ];
 
     public array $categories = ['Tips', 'Case Study', 'Achievement', 'Question', 'Motivation'];
 
@@ -131,27 +138,64 @@ new class extends Component
                 </div>
             </div>
 
-            {{-- Topic --}}
+            {{-- Topic (searchable combobox: type to filter OR pick from list) --}}
             <div>
                 <label for="topic" class="mb-2 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Topic</label>
-                <input id="topic" type="text" wire:model="topic" list="topic-suggestions" placeholder="e.g. Laravel queues"
-                    class="w-full rounded-lg border border-white/20 bg-white/60 px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:border-violet-400 focus:ring-2 focus:ring-violet-300/50 focus:outline-none dark:bg-white/10 dark:text-white">
-                <datalist id="topic-suggestions">
-                    @foreach ($topics as $t)
-                        <option value="{{ $t }}"></option>
-                    @endforeach
-                </datalist>
+                <div class="relative"
+                    x-data="{
+                        open: false,
+                        options: @js($topics),
+                        query: @js($topic),
+                        filtered() {
+                            const q = this.query.toLowerCase().trim();
+                            return q === '' ? this.options : this.options.filter(o => o.toLowerCase().includes(q));
+                        },
+                        pick(o) { this.query = o; $wire.topic = o; this.open = false; }
+                    }"
+                    @click.outside="open = false"
+                    @keydown.escape="open = false">
+
+                    <input id="topic" type="text" autocomplete="off"
+                        x-model="query"
+                        @focus="open = true"
+                        @input="open = true; $wire.topic = query"
+                        placeholder="Search or type a topic…"
+                        class="w-full rounded-lg border border-white/20 bg-white/60 px-3 py-2 pr-9 text-sm text-slate-800 placeholder-slate-400 focus:border-violet-400 focus:ring-2 focus:ring-violet-300/50 focus:outline-none dark:bg-white/10 dark:text-white">
+
+                    <button type="button" tabindex="-1" @click="open = !open"
+                        class="absolute inset-y-0 right-0 flex items-center pr-2.5 text-slate-500 dark:text-slate-300">
+                        <svg class="h-4 w-4 transition-transform" :class="open && 'rotate-180'" fill="none" viewBox="0 0 24 24" stroke-width="2.2" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                        </svg>
+                    </button>
+
+                    <div x-show="open" x-transition.origin.top x-cloak
+                        class="thin-scroll absolute z-30 mt-1 max-h-56 w-full overflow-auto rounded-lg border border-slate-200 bg-white p-1 shadow-xl dark:border-white/10 dark:bg-slate-800">
+                        <template x-for="o in filtered()" :key="o">
+                            <button type="button" @click="pick(o)"
+                                class="block w-full rounded-md px-3 py-1.5 text-left text-sm text-slate-700 transition hover:bg-violet-50 dark:text-slate-200 dark:hover:bg-white/10"
+                                :class="o === query && 'bg-violet-50 font-medium text-violet-700 dark:bg-white/10 dark:text-violet-300'"
+                                x-text="o"></button>
+                        </template>
+                        <p x-show="filtered().length === 0" class="px-3 py-1.5 text-xs text-slate-400">No match — we'll use what you typed.</p>
+                    </div>
+                </div>
             </div>
 
             {{-- Category --}}
             <div>
                 <label for="category" class="mb-2 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Category</label>
-                <select id="category" wire:model="category"
-                    class="w-full rounded-lg border border-white/20 bg-white/60 px-3 py-2 text-sm text-slate-800 focus:border-violet-400 focus:ring-2 focus:ring-violet-300/50 focus:outline-none dark:bg-white/10 dark:text-white">
-                    @foreach ($categories as $c)
-                        <option value="{{ $c }}">{{ $c }}</option>
-                    @endforeach
-                </select>
+                <div class="relative">
+                    <select id="category" wire:model="category"
+                        class="w-full appearance-none rounded-lg border border-white/20 bg-white/60 px-3 py-2 pr-9 text-sm text-slate-800 focus:border-violet-400 focus:ring-2 focus:ring-violet-300/50 focus:outline-none dark:bg-white/10 dark:text-white">
+                        @foreach ($categories as $c)
+                            <option value="{{ $c }}" class="bg-white text-slate-800 dark:bg-slate-800 dark:text-white">{{ $c }}</option>
+                        @endforeach
+                    </select>
+                    <svg class="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 dark:text-slate-300" fill="none" viewBox="0 0 24 24" stroke-width="2.2" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                    </svg>
+                </div>
             </div>
 
             {{-- Tone --}}
