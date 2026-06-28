@@ -126,34 +126,46 @@ class GroqService
     }
 
     /**
-     * Generate a Leonardo.ai image prompt that represents the post's story.
+     * Generate a cinematic image prompt that represents the post's story.
      */
     public function generateImagePrompt(string $post, string $topic = ''): string
     {
-        $system = 'You are a professional art director creating prompts for Leonardo.ai';
+        $system = <<<PROMPT
+        You are a professional art director. Create a Leonardo.ai image prompt
+        based on the post content. Output ONLY the prompt, nothing else.
+        PROMPT;
 
         $user = <<<PROMPT
-        Create a detailed Leonardo.ai image prompt for this LinkedIn post.
-
-        Post content: {$post}
+        Post: {$post}
         Topic: {$topic}
 
+        Create a cinematic image prompt that visually tells this post's story.
         Rules:
-        - Scene must visually represent the POST STORY, not just "developer at laptop"
-        - Include: specific environment, mood, color palette, lighting style
-        - Style: cinematic photography, not illustration
-        - Must feel professional and LinkedIn-worthy
-        - Format: [scene], [environment], [mood], [lighting], [camera], [style], --ar 4:5 --q 2
-        - Example good prompt: "Frustrated developer staring at terminal with
-          hundreds of database queries listed, dark office at 2am, blue monitor
-          glow, shallow depth of field, cinematic --ar 4:5 --q 2"
-        - Output ONLY the prompt, nothing else, max 60 words
+        - NO generic "developer at laptop" scenes
+        - Scene must reflect the SPECIFIC story in the post
+        - Include: environment, mood, color, lighting
+        - Style: cinematic photography, ultra realistic, 4k
+        - Max 30 words before parameters
+        - End with: --ar 4:5
+        - Output ONLY the prompt text, nothing else
         PROMPT;
 
         return $this->chat([
             ['role' => 'system', 'content' => $system],
             ['role' => 'user', 'content' => $user],
-        ], temperature: 0.85, maxTokens: 200);
+        ], temperature: 0.85, maxTokens: 160);
+    }
+
+    /**
+     * Build a free Pollinations.ai (flux) image URL from a prompt.
+     * No API key required.
+     */
+    public function pollinationsUrl(string $prompt, int $width = 800, int $height = 1000): string
+    {
+        $encodedPrompt = urlencode($prompt);
+        $seed = rand(1000, 9999);
+
+        return "https://image.pollinations.ai/prompt/{$encodedPrompt}?width={$width}&height={$height}&seed={$seed}&nologo=true&model=flux";
     }
 
     /**

@@ -18,6 +18,11 @@ new class extends Component
 
     public ?string $imagePrompt = null;
 
+    // Free Pollinations.ai image generated from the prompt.
+    public string $generatedImageUrl = '';
+
+    public bool $imageLoading = true;
+
     // The tone style Groq actually used for the latest post (randomly chosen).
     public ?string $generatedTone = null;
 
@@ -54,18 +59,27 @@ new class extends Component
             return;
         }
 
+        $this->imageLoading = true;
+
         try {
             $groq = app(GroqService::class);
 
+            // 1. Post  2. Image prompt  3. Pollinations image URL
             $result = $groq->generatePost($this->topic, $this->category, $this->tone, $this->platform);
             $this->content = $result['content'];
             $this->generatedTone = $result['tone'];
+
             $this->imagePrompt = $groq->generateImagePrompt($this->content, $this->topic);
+            $this->generatedImageUrl = $groq->pollinationsUrl($this->imagePrompt);
+            $this->imageLoading = false;
+
             $this->generationCount++;
             $this->justSaved = false;
 
+            $this->dispatch('imageReady');
             $this->dispatch('toast', message: 'Fresh post generated!', type: 'success');
         } catch (\Throwable $e) {
+            $this->imageLoading = false;
             $this->dispatch('toast', message: $e->getMessage(), type: 'error');
         }
     }
@@ -88,6 +102,7 @@ new class extends Component
             'platform' => $this->platform,
             'tone' => $this->generatedTone ?: $this->tone,
             'image_prompt' => $this->imagePrompt,
+            'image_url' => $this->generatedImageUrl ?: null,
         ]);
 
         $this->justSaved = true;
@@ -328,6 +343,55 @@ new class extends Component
                             </div>
                         </div>
                     </div>
+
+                    {{-- ===================== GENERATED IMAGE (Pollinations.ai) ===================== --}}
+                    @if ($generatedImageUrl)
+                        <div wire:key="genimg-{{ $generationCount }}"
+                            x-data="{ loaded: false, failed: false }"
+                            class="animate-fade-in-up overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-white/10 dark:bg-slate-900/70">
+
+                            {{-- Loading skeleton (until the Pollinations image actually downloads) --}}
+                            <div x-show="!loaded && !failed"
+                                class="flex h-80 w-full animate-pulse items-center justify-center bg-slate-100 dark:bg-slate-800">
+                                <span class="flex items-center gap-2 text-sm text-slate-400">
+                                    <svg class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                                    </svg>
+                                    Generating image…
+                                </span>
+                            </div>
+
+                            {{-- Error fallback --}}
+                            <div x-show="failed" x-cloak
+                                class="flex h-40 w-full flex-col items-center justify-center gap-2 bg-slate-100 text-center text-sm text-slate-400 dark:bg-slate-800">
+                                Image service is busy. Try Regenerate, or open the URL directly.
+                            </div>
+
+                            {{-- The image --}}
+                            <img
+                                src="{{ $generatedImageUrl }}"
+                                alt="AI-generated image for the post"
+                                x-show="loaded"
+                                x-cloak
+                                x-on:load="loaded = true; $el.classList.add('fade-in')"
+                                x-on:error="failed = true"
+                                class="w-full object-cover">
+
+                            {{-- Action buttons --}}
+                            <div class="flex gap-2 p-3"
+                                x-data="{ copyUrl() { navigator.clipboard.writeText(@js($generatedImageUrl)).then(() => window.dispatchEvent(new CustomEvent('toast', { detail: { message: 'Image URL copied!', type: 'success' } }))); } }">
+                                <a href="{{ $generatedImageUrl }}" download="post-image.jpg" target="_blank" rel="noopener"
+                                    class="flex-1 rounded-lg bg-gradient-to-r from-violet-600 to-fuchsia-600 px-4 py-2 text-center text-sm font-semibold text-white transition hover:from-violet-500 hover:to-fuchsia-500">
+                                    ⬇ Download Image
+                                </a>
+                                <button type="button" @click="copyUrl()"
+                                    class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 dark:border-white/10 dark:text-slate-200 dark:hover:bg-white/10">
+                                    🔗 Copy URL
+                                </button>
+                            </div>
+                        </div>
+                    @endif
 
                     {{-- ===================== IMAGE PROMPT CARD ===================== --}}
                     @if ($imagePrompt)

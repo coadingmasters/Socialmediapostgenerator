@@ -12,6 +12,7 @@ class SavedPost extends Model
         'tone',
         'hashtags',
         'image_prompt',
+        'image_url',
         'is_shared',
         'shared_at',
         'is_posted',
