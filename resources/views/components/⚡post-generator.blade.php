@@ -18,6 +18,9 @@ new class extends Component
 
     public ?string $imagePrompt = null;
 
+    // The tone style Groq actually used for the latest post (randomly chosen).
+    public ?string $generatedTone = null;
+
     public int $generationCount = 0;
 
     public bool $justSaved = false;
@@ -54,8 +57,10 @@ new class extends Component
         try {
             $groq = app(GroqService::class);
 
-            $this->content = $groq->generatePost($this->topic, $this->category, $this->tone, $this->platform);
-            $this->imagePrompt = $groq->generateImagePrompt($this->content);
+            $result = $groq->generatePost($this->topic, $this->category, $this->tone, $this->platform);
+            $this->content = $result['content'];
+            $this->generatedTone = $result['tone'];
+            $this->imagePrompt = $groq->generateImagePrompt($this->content, $this->topic);
             $this->generationCount++;
             $this->justSaved = false;
 
@@ -81,7 +86,7 @@ new class extends Component
         SavedPost::create([
             'content' => $this->content,
             'platform' => $this->platform,
-            'tone' => $this->tone,
+            'tone' => $this->generatedTone ?: $this->tone,
             'image_prompt' => $this->imagePrompt,
         ]);
 

@@ -2,7 +2,9 @@
 
 namespace App\Services;
 
+use App\Models\SavedPost;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use RuntimeException;
 
 class GroqService
@@ -19,57 +21,139 @@ class GroqService
 
     /**
      * Generate a full social post for the given parameters.
+     *
+     * Returns the post text plus the randomly selected tone style that was
+     * used, so the caller can persist it.
+     *
+     * @return array{content: string, tone: string}
      */
-    public function generatePost(string $topic, string $category, string $tone, string $platform): string
+    public function generatePost(string $topic, string $category, string $tone, string $platform): array
     {
-        $platformTone = $platform === 'facebook'
-            ? 'Facebook: casual, conversational, friendly, use emojis'
-            : 'LinkedIn: professional, thought leadership, no emojis';
+        // 1. Pull the last 20 saved posts so Groq can avoid repeating angles.
+        $recentPosts = SavedPost::latest()
+            ->take(20)
+            ->pluck('content')
+            ->map(fn ($p) => '- '.Str::limit($p, 80))
+            ->implode("\n");
 
-        $toneDirective = self::TONES[$tone] ?? self::TONES['Professional'];
+        if (trim($recentPosts) === '') {
+            $recentPosts = '(nothing posted yet — you have a clean slate)';
+        }
 
+        // 2. Uniqueness seed: random hook + random tone + entropy.
+        $hooks = [
+            "I made a mistake that cost my client 3 days of work.",
+            "Nobody talks about this Laravel feature.",
+            "I lost a client because I ignored this.",
+            "After 5 years of PHP, I still get surprised by this.",
+            "A junior dev asked me something I couldn't answer.",
+            "My client's site crashed. Here's what I learned.",
+            "Stop writing Laravel code like this.",
+            "I reviewed 10 freelancer portfolios. Same mistake in all.",
+            "This one Laravel trick saved me 4 hours last week.",
+            "Most PHP developers don't know this exists.",
+            "I almost gave up freelancing until I learned this.",
+            "This is why your Laravel app is slow.",
+            "3 years ago I was charging \$5/hr. Here's what changed.",
+            "The client said my code was 'too clean'. I'll explain.",
+            "I Googled this embarrassing Laravel thing yesterday.",
+        ];
+
+        $tones = [
+            "storytelling - share a real personal experience with specific details",
+            "controversial - challenge a common belief in PHP/Laravel community",
+            "educational - teach one very specific technical thing step by step",
+            "mistake - share a real mistake and lesson learned",
+            "behind the scenes - show what freelance dev life actually looks like",
+            "client story - share an anonymous client project lesson",
+            "hot take - strong opinion that developers will agree or disagree with",
+        ];
+
+        $randomHook = $hooks[array_rand($hooks)];
+        $randomTone = $tones[array_rand($tones)];
+        $uniqueSeed = now()->timestamp.rand(100, 999);
+
+        // 3. System prompt.
         $system = <<<PROMPT
-        You are a LinkedIn growth expert writing posts for a Pakistani PHP/Laravel freelance developer.
-        Write posts that:
-        - Open with a scroll-stopping hook (bold claim, surprising stat, or relatable question)
-        - Share ONE specific insight, mistake, or lesson (not generic advice)
-        - Use short punchy paragraphs (max 2 lines each)
-        - Sound like a real human developer, not AI
-        - End with a question to drive comments
-        - Add 4-5 hashtags on last line
-        - Word count: 150-250 words
-        - For Facebook tone: more casual, add emoji, conversational
-        - For LinkedIn tone: professional, no emoji, thought leadership
-        Topic: {$topic}, Category: {$category}, Tone: {$platformTone}
+        You are a real Pakistani software developer named Ahsan who writes
+        brutally honest LinkedIn posts about PHP, Laravel, and freelancing.
 
-        Extra style direction for this post ({$tone}): {$toneDirective}
+        Your writing rules:
+        - NEVER start with "I" — start with the hook given to you
+        - Write like you are texting a developer friend, then cleaned up
+        - Use SPECIFIC numbers, tools, file names, error names when possible
+        - One idea per post — do not try to cover multiple points
+        - Paragraphs max 2 lines — white space is your friend on LinkedIn
+        - NO corporate words: leverage, synergy, journey, excited, thrilled,
+          passionate, dive deep, game changer, unlock, empower
+        - NO bullet points or numbered lists in the post
+        - End with ONE honest question that developers actually want to answer
+        - Sound slightly frustrated or surprised — that gets engagement
+        - Total length: 160-220 words strictly
 
-        Return ONLY the post text. No preamble, no "Here is your post", no quotes around it.
+        Hashtag rules:
+        - Exactly 4 hashtags only
+        - Mix: 1 broad (#PHP or #Laravel) + 1 niche (#LaravelTips or #EloquentORM)
+          + 1 audience (#FreelanceDeveloper or #WebDeveloper) + 1 location (#PakistanTech or #Pakistani)
+        - NO generic hashtags like #Coding #Programming #Developer #Tech #Software
         PROMPT;
 
-        return $this->chat([
+        // 4. User prompt.
+        $user = <<<PROMPT
+        Unique seed: {$uniqueSeed}
+        Platform: {$platform}
+        Topic: {$topic}
+        Category: {$category}
+        Tone style: {$randomTone}
+
+        Start the post with this hook (rewrite it naturally, don't copy exactly):
+        "{$randomHook}"
+
+        IMPORTANT - I have already posted about these topics recently,
+        do NOT repeat these angles:
+        {$recentPosts}
+
+        Write a completely different angle. Be specific. Be human.
+        Output ONLY the post text + hashtags. No explanations.
+        PROMPT;
+
+        $content = $this->chat([
             ['role' => 'system', 'content' => $system],
-            ['role' => 'user', 'content' => "Write the post now for topic \"{$topic}\" in the {$category} category."],
-        ], temperature: 0.9);
+            ['role' => 'user', 'content' => $user],
+        ], temperature: 1.0);
+
+        return ['content' => $content, 'tone' => $randomTone];
     }
 
     /**
-     * Generate a Leonardo/Midjourney image prompt for a finished post.
+     * Generate a Leonardo.ai image prompt that represents the post's story.
      */
-    public function generateImagePrompt(string $post): string
+    public function generateImagePrompt(string $post, string $topic = ''): string
     {
-        $system = <<<PROMPT
-        Generate a Midjourney/Leonardo AI image prompt for this LinkedIn post.
-        The image should be professional, modern, tech-themed.
-        Format: detailed scene description, style, lighting, camera angle, --ar 4:5 --q 2
-        Keep it under 50 words. No explanations, just the prompt.
+        $system = 'You are a professional art director creating prompts for Leonardo.ai';
+
+        $user = <<<PROMPT
+        Create a detailed Leonardo.ai image prompt for this LinkedIn post.
+
         Post content: {$post}
+        Topic: {$topic}
+
+        Rules:
+        - Scene must visually represent the POST STORY, not just "developer at laptop"
+        - Include: specific environment, mood, color palette, lighting style
+        - Style: cinematic photography, not illustration
+        - Must feel professional and LinkedIn-worthy
+        - Format: [scene], [environment], [mood], [lighting], [camera], [style], --ar 4:5 --q 2
+        - Example good prompt: "Frustrated developer staring at terminal with
+          hundreds of database queries listed, dark office at 2am, blue monitor
+          glow, shallow depth of field, cinematic --ar 4:5 --q 2"
+        - Output ONLY the prompt, nothing else, max 60 words
         PROMPT;
 
         return $this->chat([
             ['role' => 'system', 'content' => $system],
-            ['role' => 'user', 'content' => 'Return only the image prompt.'],
-        ], temperature: 0.8, maxTokens: 200);
+            ['role' => 'user', 'content' => $user],
+        ], temperature: 0.85, maxTokens: 200);
     }
 
     /**
